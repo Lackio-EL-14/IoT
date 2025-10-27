@@ -1,8 +1,5 @@
 #include <WiFi.h>
 
-// ========================================
-// ========== CLASE SENSOR DISTANCIA ======
-// ========================================
 class SensorDistancia {
 private:
   int pinTrig;
@@ -19,24 +16,20 @@ public:
   }
 
   float leerDistanciaCM() {
-    // Envía pulso ultrasónico
     digitalWrite(pinTrig, LOW);
     delayMicroseconds(2);
     digitalWrite(pinTrig, HIGH);
     delayMicroseconds(10);
     digitalWrite(pinTrig, LOW);
 
-    // Mide duración del eco
+
     long duracion = pulseIn(pinEcho, HIGH);
-    // Calcular distancia en cm (343 m/s → 0.0343 cm/µs)
+
     float distancia = duracion * 0.0343 / 2.0;
     return distancia;
   }
 };
 
-// ========================================
-// ========== CLASE TCP CLIENT ============
-// ========================================
 class TcpClient {
 private:
   WiFiClient client;
@@ -113,13 +106,10 @@ public:
   }
 
   bool connectionTimeout() {
-    return (millis() - lastPong) > 15000;
+    return (millis() - lastPong) > 10000;
   }
 };
 
-// ========================================
-// ======== CLASE SENSOR SYSTEM ===========
-// ========================================
 class SensorSystem {
 private:
   SensorDistancia& sensor;
@@ -145,7 +135,7 @@ public:
   }
 
   void update() {
-    // Procesar mensajes del servidor
+   
     if (tcp.available()) {
       String msg = tcp.readLine();
       msg.trim();
@@ -158,9 +148,9 @@ public:
     // Enviar PING cada 5s
     tcp.sendPing();
 
-    // Enviar distancia cada 5s
+    // Enviar distancia cada 2s
     unsigned long now = millis();
-    if (now - lastSend > 5000) {
+    if (now - lastSend > 2000) {
       float distancia = sensor.leerDistanciaCM();
 
       String json = "{\"method\":\"PUT\",\"data\":{\"distance\":";
@@ -172,7 +162,7 @@ public:
       lastSend = now;
     }
 
-    // Timeout sin PONG
+    
     if (tcp.connectionTimeout()) {
       Serial.println("[WARN] No PONG detected, reconnecting TCP...");
       tcp.disconnect();
@@ -182,24 +172,20 @@ public:
   }
 };
 
-// ========================================
-// =========== CONFIGURACIÓN ==============
-// ========================================
-const char* ssid = "Flia LAMAS";
-const char* password = "kf142004";
-const char* server_ip = "192.168.0.10";
+
+const char* ssid = "Redmi-Kf14";
+const char* password = "vivaellol";
+const char* server_ip = "10.105.87.110";
 const int server_port = 10000;
 
 SensorDistancia sensorDistancia;
 TcpClient tcp;
 SensorSystem* sistema;
 
-// ========================================
-// ============= SETUP ====================
-// ========================================
+
 void setup() {
-  // Configura los pines del sensor ultrasónico
-  sensorDistancia.setPins(27, 25); // Trig, Echo (ajústalos según tu conexión)
+
+  sensorDistancia.setPins(27, 25); 
 
   Serial.begin(115200);
   Serial.println("[WIFI] Connecting...");
@@ -217,9 +203,6 @@ void setup() {
   sistema->start();
 }
 
-// ========================================
-// =============== LOOP ===================
-// ========================================
 void loop() {
   // Reconección WiFi
   if (WiFi.status() != WL_CONNECTED) {
@@ -234,13 +217,13 @@ void loop() {
   if (!tcp.isConnected()) {
     Serial.println("[TCP] Lost connection, retrying...");
     tcp.disconnect();
-    delay(2000);
+    delay(1000);
     tcp.connectServer();
     return;
   }
 
-  // Actualización del sistema
+
   sistema->update();
-  delay(1000);
+  delay(200);
 }
 

@@ -53,17 +53,47 @@ class LedLogic:
                 {"led": "red", "action": "blink", "interval": 0.8},
             ]
         elif 40 <= distance <= 50:
-            return [{"led": "red", "action": "blink", "interval": 0.2}]
+            return [
+                {"led": "red", "action": "blink", "interval": 0.2},
+                {"led": "yellow", "action": "off"},
+                {"led": "green", "action": "off"},
+                {"led": "blue", "action": "off"}
+                ]
         elif 50 < distance <= 60:
-            return [{"led": "red", "action": "on"}]
+            return [
+                {"led": "red", "action": "on"},
+                {"led": "yellow", "action": "off"},
+                {"led": "green", "action": "off"},
+                {"led": "blue", "action": "off"}
+                ]
         elif 60 < distance <= 70:
-            return [{"led": "yellow", "action": "blink", "interval": 0.2}]
+            return [
+                {"led": "yellow", "action": "blink", "interval": 0.2},
+                {"led": "green", "action": "off"},
+                {"led": "blue", "action": "off"},
+                {"led": "red", "action": "off"}
+                ]
         elif 70 < distance <= 80:
-            return [{"led": "yellow", "action": "on"}]
+            return [
+                {"led": "yellow", "action": "on"},
+                {"led": "green", "action": "off"},
+                {"led": "blue", "action": "off"},
+                {"led": "red", "action": "off"}
+                ]
         elif 80 < distance <= 90:
-            return [{"led": "green", "action": "blink", "interval": 0.2}]
+            return [
+                {"led": "green", "action": "blink", "interval": 0.2},
+                {"led": "blue", "action": "off"},
+                {"led": "yellow", "action": "off"},
+                {"led": "red", "action": "off"}
+                ]
         elif 90 < distance <= 100:
-            return [{"led": "green", "action": "on"}]
+            return [
+                {"led": "green", "action": "on"},
+                {"led": "blue", "action": "off"},
+                {"led": "yellow", "action": "off"},
+                {"led": "red", "action": "off"}
+                ]
         elif 100 < distance <= 110:
             return [{"led": "blue", "action": "blink", "interval": 0.2}]
         elif 110 < distance <= 120:

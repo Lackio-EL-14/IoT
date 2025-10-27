@@ -1,26 +1,54 @@
 #include <WiFi.h>
 
-// ===============================
-// ======= CLASE LED =============
-// ===============================
 class Led {
 private:
   int pin;
+  bool blinking;
+  bool state;
+  unsigned long lastToggle;
+  int interval;
+
 public:
-  Led() {}
+  Led() : pin(-1), blinking(false), state(false), lastToggle(0), interval(0) {}
+
   void setPin(int p) {
     pin = p;
     pinMode(pin, OUTPUT);
     digitalWrite(pin, LOW);
   }
+
   int getPin() { return pin; }
-  void turnOn() { digitalWrite(pin, HIGH); }
-  void turnOff() { digitalWrite(pin, LOW); }
+
+  void turnOn() {
+    blinking = false;
+    state = true;
+    digitalWrite(pin, HIGH);
+  }
+
+  void turnOff() {
+    blinking = false;
+    state = false;
+    digitalWrite(pin, LOW);
+  }
+
+  void setBlink(int ms) {
+    blinking = true;
+    interval = ms;
+    lastToggle = millis();
+    state = true;
+    digitalWrite(pin, HIGH);
+  }
+
+  void update() {
+    if (blinking && millis() - lastToggle >= interval) {
+      state = !state;
+      digitalWrite(pin, state ? HIGH : LOW);
+      lastToggle = millis();
+    }
+  }
 };
 
-// ===============================
-// ======= CLASE TCP CLIENT ======
-// ===============================
+
 class TcpClient {
 private:
   WiFiClient client;
@@ -57,7 +85,7 @@ public:
 
   void sendPing() {
     unsigned long now = millis();
-    if (now - lastPingTime > 10000) {
+    if (now - lastPingTime > 5000) {
       client.print("{\"method\":\"PING\"}\n");
       pongReceived = false;
       lastPingTime = now;
@@ -68,12 +96,12 @@ public:
   void handlePong(const String& msg) {
     if (msg.indexOf("\"PONG\"") >= 0) {
       pongReceived = true;
-      Serial.println("[PONG] Received ✅");
+      Serial.println("[PONG] Received ");
     }
   }
 
   bool pingTimeout() {
-    return !pongReceived && (millis() - lastPingTime > 20000);
+    return !pongReceived && (millis() - lastPingTime > 10000);
   }
 
   void reconnect() {
@@ -84,9 +112,7 @@ public:
   }
 };
 
-// ===================================
-// ======= CLASE ACTUATOR SYSTEM =====
-// ===================================
+
 class ActuatorSystem {
 private:
   Led& redLed;
@@ -95,15 +121,9 @@ private:
   Led& blueLed;
   TcpClient& tcp;
 
-  unsigned long lastBlink;
-  bool ledStatus;
-  int blinkingPin;
-  int blinkInterval;
-
 public:
   ActuatorSystem(Led& r, Led& y, Led& g, Led& b, TcpClient& t)
-    : redLed(r), yellowLed(y), greenLed(g), blueLed(b), tcp(t),
-      lastBlink(0), ledStatus(false), blinkingPin(-1), blinkInterval(0) {}
+    : redLed(r), yellowLed(y), greenLed(g), blueLed(b), tcp(t) {}
 
   void turnOffLeds() {
     redLed.turnOff();
@@ -117,42 +137,74 @@ public:
     turnOffLeds();
   }
 
-  void executeBlink() {
-    if (blinkingPin == -1) return;
-    unsigned long now = millis();
-    if (now - lastBlink >= blinkInterval) {
-      lastBlink = now;
-      ledStatus = !ledStatus;
-      digitalWrite(blinkingPin, ledStatus ? HIGH : LOW);
-    }
-  }
-
   void setLedAction(String ledColor, String action, float interval = 0) {
-    int pin = -1;
-    if (ledColor == "red") pin = redLed.getPin();
-    else if (ledColor == "yellow") pin = yellowLed.getPin();
-    else if (ledColor == "green") pin = greenLed.getPin();
-    else if (ledColor == "blue") pin = blueLed.getPin();
+    Led* led = nullptr;
 
-    if (pin == -1) return;
+    if (ledColor == "red") led = &redLed;
+    else if (ledColor == "yellow") led = &yellowLed;
+    else if (ledColor == "green") led = &greenLed;
+    else if (ledColor == "blue") led = &blueLed;
+
+    if (!led) return;
 
     if (action == "on") {
-      digitalWrite(pin, HIGH);
-      if (blinkingPin == pin) blinkingPin = -1;
+      led->turnOn();
       Serial.printf("[LED] %s → ON\n", ledColor.c_str());
     } 
     else if (action == "off") {
-      digitalWrite(pin, LOW);
-      if (blinkingPin == pin) blinkingPin = -1;
+      led->turnOff();
       Serial.printf("[LED] %s → OFF\n", ledColor.c_str());
     } 
     else if (action == "blink") {
-      blinkingPin = pin;
-      blinkInterval = (int)(interval * 1000);
-      ledStatus = true;
-      digitalWrite(pin, HIGH);
-      lastBlink = millis();
+      led->setBlink((int)(interval * 1000));
       Serial.printf("[LED] %s → BLINK (%.1fs)\n", ledColor.c_str(), interval);
+    }
+  }
+
+  void processMessage(const String& msg) {
+    if (msg.indexOf("\"leds\"") >= 0) {
+      int idx = msg.indexOf("[");
+      int end = msg.indexOf("]");
+      if (idx == -1 || end == -1) return;
+
+      String ledsArray = msg.substring(idx + 1, end);
+      int pos = 0;
+      while (pos < ledsArray.length()) {
+        int s = ledsArray.indexOf("{", pos);
+        int e = ledsArray.indexOf("}", s);
+        if (s == -1 || e == -1) break;
+
+        String ledJson = ledsArray.substring(s, e + 1);
+        String led, action;
+        float interval = 0.0;
+
+        int iLed = ledJson.indexOf("\"led\"");
+        int iAction = ledJson.indexOf("\"action\"");
+        int iInterval = ledJson.indexOf("\"interval\"");
+
+        if (iLed >= 0) {
+          int start = ledJson.indexOf("\"", iLed + 5);
+          int end = ledJson.indexOf("\"", start + 1);
+          led = ledJson.substring(start + 1, end);
+        }
+        if (iAction >= 0) {
+          int start = ledJson.indexOf("\"", iAction + 8);
+          int end = ledJson.indexOf("\"", start + 1);
+          action = ledJson.substring(start + 1, end);
+        }
+        if (iInterval >= 0) {
+          int start = ledJson.indexOf(":", iInterval) + 1;
+          int end = ledJson.indexOf(",", start);
+          if (end == -1) end = ledJson.length();
+          interval = ledJson.substring(start, end).toFloat();
+        }
+
+        setLedAction(led, action, interval);
+        pos = e + 1;
+      }
+    } 
+    else if (msg.indexOf("\"PONG\"") >= 0) {
+      tcp.handlePong(msg);
     }
   }
 
@@ -165,74 +217,27 @@ public:
       if (msg.isEmpty()) return;
 
       Serial.print("[TCP RX] "); Serial.println(msg);
-
-      if (msg.indexOf("\"leds\"") >= 0) {
-        int idx = msg.indexOf("[");
-        int end = msg.indexOf("]");
-        if (idx == -1 || end == -1) return;
-
-        String ledsArray = msg.substring(idx + 1, end);
-
-        int pos = 0;
-        while (pos < ledsArray.length()) {
-          int s = ledsArray.indexOf("{", pos);
-          int e = ledsArray.indexOf("}", s);
-          if (s == -1 || e == -1) break;
-
-          String ledJson = ledsArray.substring(s, e + 1);
-
-          String led, action;
-          float interval = 0.0;
-
-          int iLed = ledJson.indexOf("\"led\"");
-          int iAction = ledJson.indexOf("\"action\"");
-          int iInterval = ledJson.indexOf("\"interval\"");
-
-          if (iLed >= 0) {
-            int start = ledJson.indexOf("\"", iLed + 5);
-            int end = ledJson.indexOf("\"", start + 1);
-            led = ledJson.substring(start + 1, end);
-          }
-          if (iAction >= 0) {
-            int start = ledJson.indexOf("\"", iAction + 8);
-            int end = ledJson.indexOf("\"", start + 1);
-            action = ledJson.substring(start + 1, end);
-          }
-          if (iInterval >= 0) {
-            int start = ledJson.indexOf(":", iInterval) + 1;
-            int end = ledJson.indexOf(",", start);
-            if (end == -1) end = ledJson.length();
-            interval = ledJson.substring(start, end).toFloat();
-          }
-
-          setLedAction(led, action, interval);
-          pos = e + 1;
-        }
-      } 
-      else if (msg.indexOf("\"PONG\"") >= 0) {
-        tcp.handlePong(msg);
-      }
+      processMessage(msg);
     }
 
-    executeBlink();
+   
+    redLed.update();
+    yellowLed.update();
+    greenLed.update();
+    blueLed.update();
   }
 };
 
-// ===============================
-// =========== CONFIG ============
-// ===============================
-const char* ssid = "Flia LAMAS";
-const char* password = "kf142004";
-const char* server_ip = "192.168.0.10";
+const char* ssid = "Redmi-Kf14";
+const char* password = "vivaellol";
+const char* server_ip = "10.105.87.110";
 const int server_port = 10000;
 
 Led redLed, yellowLed, greenLed, blueLed;
 TcpClient tcp;
 ActuatorSystem* actuatorSystem;
 
-// ===============================
-// =========== SETUP =============
-// ===============================
+
 void setup() {
   Serial.begin(115200);
 
@@ -256,9 +261,7 @@ void setup() {
   actuatorSystem->start();
 }
 
-// ===============================
-// =========== LOOP ==============
-// ===============================
+
 void loop() {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("[WIFI] Lost connection. Reconnecting...");
@@ -277,6 +280,6 @@ void loop() {
 
   tcp.sendPing();
   actuatorSystem->update();
-  delay(10); // loop más rápido para blink
+  delay(10);
 }
 
